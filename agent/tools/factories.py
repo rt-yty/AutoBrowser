@@ -1,75 +1,22 @@
-"""Tool definitions and registry for the agent."""
-
-from typing import Any, Callable, Dict, List
-
-from anthropic.types import ToolParam
-
-
-class Tool:
-    """Represents a tool that the agent can use."""
-
-    def __init__(
-        self,
-        name: str,
-        description: str,
-        parameters: Dict[str, Any],
-        handler: Callable,
-    ):
-        self.name = name
-        self.description = description
-        self.parameters = parameters
-        self.handler = handler
-
-    def to_anthropic_tool(self) -> ToolParam:
-        """Convert to Anthropic tool format."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "input_schema": {
-                "type": "object",
-                "properties": self.parameters,
-                "required": [
-                    k for k, v in self.parameters.items() if v.get("required", False)
-                ],
-            },
-        }
-
-
-class ToolRegistry:
-    """Registry of available tools for the agent."""
-
-    def __init__(self):
-        self.tools: Dict[str, Tool] = {}
-
-    def register(self, tool: Tool) -> None:
-        """Register a tool."""
-        self.tools[tool.name] = tool
-
-    def get_tool(self, name: str) -> Tool:
-        """Get a tool by name."""
-        if name not in self.tools:
-            raise ValueError(f"Unknown tool: {name}")
-        return self.tools[name]
-
-    def get_all_tools(self) -> List[Tool]:
-        """Get all registered tools."""
-        return list(self.tools.values())
-
-    def get_anthropic_tools(self) -> List[ToolParam]:
-        """Get all tools in Anthropic format."""
-        return [tool.to_anthropic_tool() for tool in self.tools.values()]
-
-    def execute_tool(self, name: str, **kwargs) -> str:
-        """Execute a tool with given arguments."""
-        tool = self.get_tool(name)
-        try:
-            result = tool.handler(**kwargs)
-            return str(result)
-        except Exception as e:
-            return f"Error executing tool {name}: {str(e)}"
-
-
-# Tool factory functions for common tools across agents
+from agent.tools.registry import Tool, ToolRegistry
+from agent.tools.handlers import (
+    navigate_to_handler,
+    click_handler,
+    hover_handler,
+    type_text_handler,
+    scroll_handler,
+    press_key_handler,
+    wait_for_element_handler,
+    get_page_overview_handler,
+    get_element_details_handler,
+    find_element_by_text_handler,
+    delegate_handler,
+    list_tabs_handler,
+    switch_to_tab_handler,
+    close_tab_handler,
+    switch_to_frame_handler,
+    switch_to_main_content_handler,
+)
 
 
 def create_navigation_tool(browser) -> Tool:
@@ -210,7 +157,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
     """Create tools for the coordinator agent."""
     registry = ToolRegistry()
 
-    # Navigation tool
     registry.register(
         Tool(
             name="navigate_to",
@@ -225,7 +171,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Click tool
     registry.register(
         Tool(
             name="click",
@@ -246,7 +191,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Hover tool
     registry.register(
         Tool(
             name="hover",
@@ -267,7 +211,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Type text tool
     registry.register(
         Tool(
             name="type_text",
@@ -286,7 +229,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Scroll tool
     registry.register(
         Tool(
             name="scroll",
@@ -307,7 +249,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Press key tool
     registry.register(
         Tool(
             name="press_key",
@@ -322,7 +263,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Wait for element tool
     registry.register(
         Tool(
             name="wait_for_element",
@@ -343,7 +283,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Multi-tab management tools
     registry.register(
         Tool(
             name="list_tabs",
@@ -381,7 +320,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Iframe management tools
     registry.register(
         Tool(
             name="switch_to_frame",
@@ -405,7 +343,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Get page overview tool
     registry.register(
         Tool(
             name="get_page_overview",
@@ -415,7 +352,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Get element details tool
     registry.register(
         Tool(
             name="get_element_details",
@@ -432,7 +368,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Find element by text tool
     registry.register(
         Tool(
             name="find_element_by_text",
@@ -453,7 +388,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Delegate to sub-agent tool
     registry.register(
         Tool(
             name="delegate_to_subagent",
@@ -474,7 +408,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Request human help tool
     registry.register(
         Tool(
             name="request_human_help",
@@ -489,7 +422,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Request confirmation tool for destructive actions
     registry.register(
         Tool(
             name="request_confirmation",
@@ -512,7 +444,6 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
-    # Task complete tool
     registry.register(
         Tool(
             name="task_complete",
@@ -528,179 +459,3 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
     )
 
     return registry
-
-
-# Tool handler implementations
-
-
-def navigate_to_handler(browser, url: str) -> str:
-    """Handle navigation to a URL."""
-    try:
-        browser.navigate_to(url)
-        return f"Successfully navigated to {url}"
-    except Exception as e:
-        return f"Failed to navigate to {url}: {str(e)}"
-
-
-def click_handler(browser, selector: str, description: str) -> str:
-    """Handle clicking an element."""
-    try:
-        browser.click(selector)
-        return f"Successfully clicked: {description}"
-    except Exception as e:
-        return f"Failed to click {description}: {str(e)}"
-
-
-def hover_handler(browser, selector: str, description: str) -> str:
-    """Handle hovering over an element."""
-    try:
-        browser.hover(selector)
-        return f"Successfully hovered over: {description}"
-    except Exception as e:
-        return f"Failed to hover over {description}: {str(e)}"
-
-
-def type_text_handler(browser, selector: str, text: str) -> str:
-    """Handle typing text."""
-    try:
-        browser.type_text(selector, text)
-        return f"Successfully typed text into {selector}"
-    except Exception as e:
-        return f"Failed to type text: {str(e)}"
-
-
-def scroll_handler(browser, direction: str, amount: int) -> str:
-    """Handle scrolling."""
-    try:
-        browser.scroll(direction, amount)
-        return f"Successfully scrolled {direction}"
-    except Exception as e:
-        return f"Failed to scroll: {str(e)}"
-
-
-def wait_for_element_handler(browser, selector: str, timeout: int) -> str:
-    """Handle waiting for an element."""
-    success = browser.wait_for_selector(selector, timeout)
-    if success:
-        return f"Element {selector} appeared"
-    else:
-        return f"Element {selector} did not appear within timeout"
-
-
-def get_page_overview_handler(context_manager) -> str:
-    """Handle getting page overview."""
-    context = context_manager.get_current_context()
-    return context["overview"]
-
-
-def get_element_details_handler(context_manager, selector: str) -> str:
-    """Handle getting element details."""
-    return context_manager.get_element_details(selector)
-
-
-def find_element_by_text_handler(context_manager, text: str, role: str = None) -> str:
-    """Handle finding elements by text content."""
-    results = context_manager.find_elements_by_text(text, role)
-
-    if not results:
-        return f"No elements found containing text '{text}'" + (f" with role '{role}'" if role else "")
-
-    if len(results) == 1:
-        # Single match - return the selector directly
-        elem = results[0]
-        return f"Found 1 element: {elem['tag']} '{elem['text'][:50]}' {elem['context']}\nSelector: {elem['selector']}"
-
-    # Multiple matches - return list with context
-    response_parts = [f"Found {len(results)} elements containing '{text}':"]
-    for i, elem in enumerate(results[:10], 1):  # Limit to first 10
-        response_parts.append(
-            f"{i}. {elem['tag']} '{elem['text'][:50]}' {elem['context']}\n   Selector: {elem['selector']}"
-        )
-
-    if len(results) > 10:
-        response_parts.append(f"... and {len(results) - 10} more matches")
-
-    response_parts.append("\nChoose the appropriate selector from the list above for your next action.")
-    return "\n".join(response_parts)
-
-
-def delegate_handler(subagents, subagent: str, subtask: str) -> str:
-    """Handle delegation to sub-agent."""
-    if subagent not in subagents:
-        return f"Unknown sub-agent: {subagent}"
-
-    agent = subagents[subagent]
-    result = agent.execute(subtask)
-    return result
-
-
-def press_key_handler(browser, key: str) -> str:
-    """Handle pressing a keyboard key."""
-    try:
-        browser.press_key(key)
-        return f"Successfully pressed key: {key}"
-    except Exception as e:
-        return f"Failed to press key: {str(e)}"
-
-
-def list_tabs_handler(browser) -> str:
-    """Handle listing all open tabs."""
-    try:
-        tabs = browser.list_tabs()
-        if not tabs:
-            return "No tabs open"
-
-        lines = [f"Found {len(tabs)} open tab(s):"]
-        for tab in tabs:
-            active_marker = " [ACTIVE]" if tab["is_active"] else ""
-            lines.append(
-                f"{tab['index']}. {tab['title'][:50]} - {tab['url'][:60]}{active_marker}"
-            )
-        return "\n".join(lines)
-    except Exception as e:
-        return f"Failed to list tabs: {str(e)}"
-
-
-def switch_to_tab_handler(browser, tab_index: int) -> str:
-    """Handle switching to a different tab."""
-    try:
-        browser.switch_to_tab(tab_index)
-        # Get info about the new active tab
-        tabs = browser.list_tabs()
-        active_tab = tabs[tab_index]
-        return f"Switched to tab {tab_index}: {active_tab['title'][:50]} - {active_tab['url'][:60]}"
-    except Exception as e:
-        return f"Failed to switch to tab: {str(e)}"
-
-
-def close_tab_handler(browser, tab_index: int) -> str:
-    """Handle closing a tab."""
-    try:
-        # Get tab info before closing
-        tabs = browser.list_tabs()
-        if tab_index < len(tabs):
-            tab_info = tabs[tab_index]
-            browser.close_tab(tab_index)
-            return f"Closed tab {tab_index}: {tab_info['title'][:50]}"
-        else:
-            return f"Invalid tab index: {tab_index}"
-    except Exception as e:
-        return f"Failed to close tab: {str(e)}"
-
-
-def switch_to_frame_handler(browser, selector: str) -> str:
-    """Handle switching to iframe context."""
-    try:
-        browser.switch_to_frame(selector)
-        return f"Switched to iframe: {selector}. You can now interact with elements inside the iframe using Playwright's >> syntax (e.g., '{selector} >> button')."
-    except Exception as e:
-        return f"Failed to switch to iframe: {str(e)}"
-
-
-def switch_to_main_content_handler(browser) -> str:
-    """Handle switching back to main content."""
-    try:
-        browser.switch_to_main_content()
-        return "Switched back to main page content (exited iframe context)."
-    except Exception as e:
-        return f"Failed to switch to main content: {str(e)}"

@@ -1,5 +1,3 @@
-"""FormFiller sub-agent for form interaction tasks."""
-
 from agent.subagents.base import SubAgent
 from llm.claude_client import ClaudeClient
 from llm.prompts import get_subagent_prompt
@@ -10,7 +8,6 @@ class FormFiller(SubAgent):
     """Specialized sub-agent for form filling tasks."""
 
     def __init__(self, claude_client: ClaudeClient, browser, context_manager):
-        # Create tool registry with form-specific tools
         tools = self._create_tools(browser, context_manager)
 
         super().__init__(
@@ -32,7 +29,6 @@ class FormFiller(SubAgent):
 
         registry = ToolRegistry()
 
-        # Use factory functions for common tools
         registry.register(create_type_text_tool(browser))
         registry.register(
             create_click_tool(
@@ -44,7 +40,6 @@ class FormFiller(SubAgent):
         registry.register(create_page_overview_tool(context_manager))
         registry.register(create_element_details_tool(context_manager))
 
-        # FormFiller-specific tool: press_key for Enter and Tab
         registry.register(
             Tool(
                 name="press_key",
@@ -63,7 +58,6 @@ class FormFiller(SubAgent):
 
     def _press_key_handler(self, browser, key: str) -> str:
         """Handle pressing a keyboard key with validation."""
-        # FormFiller only needs Enter and Tab
         allowed_keys = {"Enter", "Tab"}
         if key not in allowed_keys:
             return f"FormFiller only supports keys: {', '.join(allowed_keys)}"

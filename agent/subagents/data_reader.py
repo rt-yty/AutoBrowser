@@ -1,5 +1,3 @@
-"""DataReader sub-agent for data extraction tasks."""
-
 from agent.subagents.base import SubAgent
 from llm.claude_client import ClaudeClient
 from llm.prompts import get_subagent_prompt
@@ -10,7 +8,6 @@ class DataReader(SubAgent):
     """Specialized sub-agent for data reading and extraction tasks."""
 
     def __init__(self, claude_client: ClaudeClient, browser, context_manager):
-        # Create tool registry with data reading-specific tools
         tools = self._create_tools(browser, context_manager)
 
         super().__init__(
@@ -31,7 +28,6 @@ class DataReader(SubAgent):
 
         registry = ToolRegistry()
 
-        # Use factory functions for common tools (read-only operations)
         registry.register(create_page_overview_tool(context_manager))
         registry.register(create_element_details_tool(context_manager))
         registry.register(create_scroll_tool(browser))

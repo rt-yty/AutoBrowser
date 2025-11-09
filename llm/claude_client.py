@@ -1,5 +1,4 @@
-"""Claude API client with tool calling support."""
-
+import time
 from typing import Any, Dict, List, Optional
 
 import anthropic
@@ -9,9 +8,20 @@ from anthropic.types import MessageParam, ToolParam, ToolUseBlock, TextBlock
 class ClaudeClient:
     """Client for interacting with Claude API with tool calling."""
 
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514"):
-        self.client = anthropic.Anthropic(api_key=api_key)
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-sonnet-4-20250514",
+        max_retries: int = 3,
+        timeout: float = 300.0,
+    ):
+        self.client = anthropic.Anthropic(
+            api_key=api_key,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
         self.model = model
+        self.max_retries = max_retries
 
     def send_message(
         self,
@@ -21,7 +31,7 @@ class ClaudeClient:
         max_tokens: int = 4096,
     ) -> anthropic.types.Message:
         """
-        Send a message to Claude and get a response.
+        Send a message to Claude and get a response with retry logic.
 
         Args:
             messages: Conversation history
@@ -31,6 +41,9 @@ class ClaudeClient:
 
         Returns:
             Claude's response message
+
+        Raises:
+            anthropic.APIError: If all retries fail
         """
         kwargs: Dict[str, Any] = {
             "model": self.model,
@@ -42,8 +55,28 @@ class ClaudeClient:
         if tools:
             kwargs["tools"] = tools
 
-        response = self.client.messages.create(**kwargs)
-        return response
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.messages.create(**kwargs)
+                return response
+            except (
+                anthropic.APITimeoutError,
+                anthropic.APIConnectionError,
+            ) as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"\n⚠️  Network error (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
+                    print(f"   Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"\n❌ All {self.max_retries} retry attempts failed.")
+                    raise
+
+        if last_error:
+            raise last_error
+        raise anthropic.APIError("Unknown error in send_message")
 
     def extract_tool_calls(
         self, response: anthropic.types.Message

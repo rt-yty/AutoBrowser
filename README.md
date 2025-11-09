@@ -1,181 +1,196 @@
-# AutoBrowser 🤖
+# AutoBrowser
 
-An autonomous AI agent that controls a real web browser to solve complex multi-step tasks using natural language.
+**Автономный AI-агент для управления веб-браузером**
 
-## Features
+AutoBrowser — это AI-агент, который управляет реальным браузером для решения сложных многошаговых задач. Использует Claude как движок для принятия решений и Playwright для автоматизации браузера.
 
-- **Fully Autonomous**: Give it a task in plain English, and it figures out how to accomplish it
-- **No Hard-Coding**: The agent analyzes websites dynamically—no pre-programmed scenarios
-- **Sub-Agent Architecture**: Specialized agents for navigation, forms, and data extraction
-- **Smart Context Management**: Uses accessibility tree + HTML drill-down to stay within token limits
-- **Persistent Sessions**: Visible browser that supports manual login for 2FA and other authentication
-- **Rich Logging**: Beautiful terminal output showing every action and reasoning
+## Быстрый старт
 
-## Example Tasks
-
-```
-"Find Python developer jobs in San Francisco on LinkedIn"
-"Search for the latest MacBook Pro on Apple's website and tell me the price"
-"Go to GitHub and find repositories about browser automation"
-```
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.12+
-- Anthropic API key ([get one here](https://console.anthropic.com/))
-
-### Installation
+### 1. Установка зависимостей
 
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd AutoBrowser
+# Создайте виртуальное окружение
+python -m venv venv
+source venv/bin/activate  # На MacOs
+venv\Scripts\activate     # На Windows
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+# Установите зависимости
 pip install -r requirements.txt
 
-# Install Playwright browsers
+# Установите браузер WebKit для Playwright
 playwright install webkit
-
-# Set up environment
-cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
 ```
 
-### Running
+### 2. Настройка
+
+```bash
+# Anthropic API Key
+ANTHROPIC_API_KEY=your_api_key
+
+# Настройки браузера
+BROWSER_HEADLESS=false
+BROWSER_TYPE=webkit
+
+# Настройки агента
+MAX_ITERATIONS=75
+CONTEXT_TOKEN_LIMIT=3000
+```
+
+### 3. Запуск
 
 ```bash
 python main.py
 ```
 
-Enter your task when prompted, and watch the agent work!
-
-## Architecture
+Агент попросит вас ввести задачу. Например:
 
 ```
-┌─────────────────────────────────────┐
-│         User Task (CLI)             │
-└───────────────┬─────────────────────┘
-                │
-                ▼
-┌─────────────────────────────────────┐
-│      Coordinator Agent              │
-│   (observe → decide → act → eval)   │
-└───────┬─────────────────────────────┘
-        │
-        ├──→ Direct Browser Actions
-        │    (click, type, navigate)
-        │
-        ├──→ Navigator Sub-Agent
-        │    (find pages, menus, links)
-        │
-        ├──→ FormFiller Sub-Agent
-        │    (fill forms, submit data)
-        │
-        └──→ DataReader Sub-Agent
-             (extract tables, lists, content)
+Task: Найди Python разработчика вакансии в Сан-Франциско на LinkedIn
 ```
 
-### Key Components
-
-- **Browser Controller**: Playwright wrapper for automation
-- **Context Manager**: Extracts and simplifies page content
-- **Coordinator**: Main agent with observe-decide-act loop
-- **Sub-Agents**: Specialized agents for specific task types
-- **Tool System**: Bridge between AI decisions and browser actions
-- **Claude Client**: Anthropic API with tool calling support
-
-## How It Works
-
-1. **Observe**: Agent gets page context via accessibility tree
-2. **Decide**: Claude analyzes context and chooses actions
-3. **Act**: Execute browser actions or delegate to sub-agents
-4. **Evaluate**: Check results and decide next step
-5. **Repeat**: Continue until task is complete
-
-The agent sees the page through its accessibility tree (semantic structure) and can drill down into specific elements when needed. All context is kept under ~3000 tokens to fit in Claude's context window.
-
-## Project Structure
+или
 
 ```
-autobrowser/
-├── main.py                   # Entry point
-├── config.py                 # Configuration management
-├── agent/
-│   ├── coordinator.py        # Main orchestrator
-│   ├── context_manager.py    # Page context extraction
-│   ├── tools.py             # Tool definitions
-│   └── subagents/           # Specialized sub-agents
-├── browser/
-│   ├── controller.py        # Playwright wrapper
-│   └── dom_utils.py         # DOM extraction
-├── llm/
-│   ├── claude_client.py     # Anthropic API client
-│   └── prompts.py           # System prompts
-└── utils/
-    └── logger.py            # Rich terminal logging
+Task: Найди последний MacBook Pro на сайте Apple и посмотри характеристики
 ```
 
-## Configuration
+---
 
-Edit `.env` to configure:
+## 🏗️ Архитектура
 
-```bash
-# Required
-ANTHROPIC_API_KEY=your_key_here
-
-# Optional
-BROWSER_TYPE=webkit          # webkit, chromium, or firefox
-MAX_ITERATIONS=50            # Max steps before timeout
-CONTEXT_TOKEN_LIMIT=3000     # Token budget for page context
+```
+Main Entry (main.py)
+    ↓
+Coordinator Agent (observe → decide → act → evaluate)
+    ↓
+    ├─→ Прямые действия (click, type, navigate)
+    ├─→ Sub-агенты (специализированные задачи)
+    │   ├─ Navigator (навигация, меню, ссылки)
+    │   ├─ FormFiller (формы, dropdown, отправка)
+    │   └─ DataReader (извлечение данных, таблицы)
+    └─→ Browser Controller (Playwright wrapper)
 ```
 
-## Design Principles
+### Основные компоненты
 
-1. **Simplicity**: Minimal dependencies, clean architecture
-2. **Explainability**: Every action is logged with reasoning
-3. **Robustness**: Graceful error handling, no crashes
-4. **Flexibility**: Works on any website without hard-coding
-5. **Efficiency**: Smart context management for token limits
+#### 1. Browser Layer (`browser/`)
+- **`controller.py`** — обертка над Playwright для автоматизации
+- **`dom_utils.py`** — извлечение и упрощение DOM
+  - Использует accessibility tree для семантического обзора
+  - Извлекает HTML фрагменты для детального изучения
+  - Ограничивает контекст до ~3000 токенов
 
-## Limitations
+#### 2. Agent Layer (`agent/`)
+- **`coordinator.py`** — главный оркестратор
+  - Реализует цикл observe-decide-act-evaluate
+  - Управляет разговором с Claude
+  - Делегирует задачи sub-агентам
+- **`context_manager.py`** — управляет контекстом страницы
+- **`tools.py`** — реестр инструментов и их определения
 
-- Single-task execution (exits after completion)
-- No error recovery/retry logic yet
-- No security confirmations for destructive actions
-- Limited to sequential actions (no parallelization)
+#### 3. Sub-Agents (`agent/subagents/`)
+- **`navigator.py`** — специализирован на навигации
+- **`form_filler.py`** — специализирован на работе с формами
+- **`data_reader.py`** — специализирован на извлечении данных
 
-## Future Improvements
+#### 4. LLM Layer (`llm/`)
+- **`claude_client.py`** — клиент Anthropic API с tool calling
+- **`prompts/`** — системные промпты для координатора и sub-агентов
 
-- Multi-turn interactive sessions
-- Error recovery with alternative strategies
-- Security layer for dangerous actions
-- Screenshot analysis for visual understanding
-- State persistence across sessions
-- Parallel action execution
+#### 5. Utils (`utils/`)
+- **`logger.py`** — красивое логирование в терминале
 
-## Contributing
+---
 
-This is a minimal MVP. Contributions welcome for:
-- Better selector generation strategies
-- More robust error handling
-- Additional sub-agent types
-- Performance optimizations
-- Test coverage
+## 🎮 Как работает агент
 
-## License
+### Цикл работы координатора
 
-MIT
+1. **Observe** 🔍
+   - Получает контекст текущей страницы
+   - Извлекает accessibility tree
+   - Упрощает до ~3000 токенов
 
-## Acknowledgments
+2. **Decide** 🤔
+   - Отправляет контекст + задачу Claude
+   - Claude решает: выполнить инструмент ИЛИ делегировать ИЛИ завершить
 
-Built with:
-- [Anthropic Claude](https://www.anthropic.com/) for AI capabilities
-- [Playwright](https://playwright.dev/) for browser automation
-- [Rich](https://rich.readthedocs.io/) for beautiful terminal output
+3. **Act** ⚡
+   - Если инструмент: выполняет через browser controller
+   - Если делегирование: вызывает sub-агента
+   - Если завершено: помечает задачу выполненной
+
+4. **Evaluate** 📊
+   - Обновляет разговор с результатом инструмента
+   - Предоставляет свежий контекст если страница изменилась
+   - Логирует рассуждения и результаты
+   - Повторяет до завершения или max итераций
+
+### Управление контекстом
+
+**Гибридный подход:**
+
+- **Primary**: Accessibility tree предоставляет семантический обзор
+  - Извлекает роли: button, link, textbox, heading и т.д.
+  - Группирует по типу, ограничивает до первых 10 каждого
+  - ~500-2000 токенов обычно
+
+- **Secondary**: HTML drill-down для деталей
+  - Агент может запросить детальный HTML через `get_element_details(selector)`
+  - HTML упрощается: скрипты/стили удаляются
+  - Используется когда accessibility tree недостаточно
+
+
+## Безопасность
+
+AutoBrowser реализует строгие правила безопасности:
+
+### 1. Обнаружение CAPTCHA и 2FA
+
+Агент **НЕ ПЫТАЕТСЯ** обойти механизмы безопасности:
+- Обнаруживает: CAPTCHA, login формы, 2FA
+- Останавливается и запрашивает помощь человека
+- Показывает четкие инструкции в терминале
+- Продолжает после того как пользователь завершил действие
+
+**Пример:**
+```
+⏸️  ПАУЗА - Требуется действие человека
+➡️  Пожалуйста решите CAPTCHA на этой странице
+
+👉 Завершите действие в окне браузера, затем нажмите Enter...
+```
+
+### 2. Подтверждение деструктивных действий
+
+Агент **ВСЕГДА запрашивает подтверждение** перед:
+- 💰 **Финансовыми действиями**: покупки, оплата, оформление заказа
+- 🗑️ **Удалением данных**: delete, trash
+- ⚠️ **Необратимыми действиями**: отправка сообщений, отмена подписок
+
+**Пример:**
+```
+💰 ТРЕБУЕТСЯ ПОДТВЕРЖДЕНИЕ - ФИНАНСОВОЕ ДЕЙСТВИЕ
+➡️  Покупка MacBook Pro за $2,499 из корзины
+
+⚠️  Это действие может быть необратимым!
+
+Продолжить? (yes/no):
+```
+
+---
+
+## 📊 Логирование
+
+AutoBrowser предоставляет детальное логирование в терминале:
+
+```
+🤖 Coordinator
+├─ Action: click
+│  └─ Selector: button:has-text('Search')
+│  └─ Description: Search button
+├─ Reasoning: Clicking the search button to submit the query
+└─ Result: Successfully clicked: Search button
+
+📄 Updated context: https://example.com | 15 buttons, 8 links
+```

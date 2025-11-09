@@ -1,6 +1,3 @@
-"""DOM extraction and simplification utilities."""
-
-import json
 from typing import Any, Dict, List, Optional
 
 from playwright.sync_api import Page
@@ -21,7 +18,6 @@ class DOMExtractor:
         if not snapshot:
             return []
 
-        # Flatten the tree and extract relevant information
         elements = []
         self._extract_accessible_elements(snapshot, elements)
         return elements
@@ -30,15 +26,13 @@ class DOMExtractor:
         self, node: Dict[str, Any], elements: List[Dict[str, Any]], depth: int = 0
     ) -> None:
         """Recursively extract accessible elements from the tree."""
-        if depth > 10:  # Limit depth to avoid too much nesting
+        if depth > 10:
             return
 
-        # Extract relevant information
         role = node.get("role", "")
         name = node.get("name", "")
         value = node.get("value", "")
 
-        # Only include interactive or meaningful elements
         interesting_roles = {
             "button",
             "link",
@@ -68,7 +62,6 @@ class DOMExtractor:
                 }
             )
 
-        # Process children
         for child in node.get("children", []):
             self._extract_accessible_elements(child, elements, depth + 1)
 
@@ -80,10 +73,8 @@ class DOMExtractor:
         url = self.page.url
         title = self.page.title()
 
-        # Get interactive elements with their CSS attributes
         elements_with_selectors = self._get_interactive_elements_with_attributes()
 
-        # Build a structured overview
         overview_parts = [
             f"URL: {url}",
             f"Title: {title}",
@@ -91,7 +82,6 @@ class DOMExtractor:
             "Interactive Elements:",
         ]
 
-        # Group elements by type
         grouped: Dict[str, List[Dict[str, Any]]] = {}
         for elem in elements_with_selectors:
             role = elem["role"]
@@ -99,19 +89,16 @@ class DOMExtractor:
                 grouped[role] = []
             grouped[role].append(elem)
 
-        # Format each group
         for role, elements in grouped.items():
             overview_parts.append(f"\n{role.upper()}S:")
-            for elem in elements[:10]:  # Limit to first 10 of each type
+            for elem in elements[:10]:
                 name = elem["name"]
                 value = elem.get("value", "")
 
-                # Build selector hint
                 selector_parts = []
                 if elem.get("id"):
                     selector_parts.append(f"#{elem['id']}")
                 if elem.get("classes"):
-                    # Show first 2 classes
                     classes = elem['classes'].split()[:2]
                     selector_parts.append("." + ".".join(classes))
 
@@ -188,7 +175,6 @@ class DOMExtractor:
         try:
             return self.page.evaluate(script)
         except Exception:
-            # Fallback to accessibility tree if JavaScript fails
             return self.get_accessibility_tree()
 
     def get_element_details(self, selector: str, max_length: int = 2000) -> Optional[str]:
@@ -208,18 +194,14 @@ class DOMExtractor:
             if not element:
                 return None
 
-            # Get the HTML content
             html = element.inner_html()
 
-            # Simplify: remove scripts, styles, and comments
             simplified = self._simplify_html(html)
 
-            # Enforce maximum length with truncation
             if len(simplified) > max_length:
                 truncated = simplified[:max_length]
-                # Try to truncate at a tag boundary to avoid breaking HTML
                 last_close = truncated.rfind(">")
-                if last_close > max_length * 0.8:  # If we can find a reasonable boundary
+                if last_close > max_length * 0.8:
                     truncated = truncated[:last_close + 1]
 
                 return f"{truncated}\n\n... [TRUNCATED - content was {len(simplified)} chars, showing first {len(truncated)} chars]"
@@ -235,33 +217,24 @@ class DOMExtractor:
         """
         import re
 
-        # Remove script tags and their content
         html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
 
-        # Remove style tags and their content
         html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
 
-        # Remove inline style attributes
         html = re.sub(r'\s+style="[^"]*"', "", html, flags=re.IGNORECASE)
         html = re.sub(r"\s+style='[^']*'", "", html, flags=re.IGNORECASE)
-
-        # Remove event handler attributes (onclick, onload, etc.)
+        
         html = re.sub(r'\s+on\w+="[^"]*"', "", html, flags=re.IGNORECASE)
         html = re.sub(r"\s+on\w+='[^']*'", "", html, flags=re.IGNORECASE)
 
-        # Remove data attributes (often used for tracking/internal IDs)
         html = re.sub(r'\s+data-[\w-]+="[^"]*"', "", html, flags=re.IGNORECASE)
 
-        # Remove comments
         html = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
 
-        # Remove excessive whitespace
         html = re.sub(r"\s+", " ", html)
 
-        # Remove spaces before closing tags
         html = re.sub(r"\s+>", ">", html)
 
-        # Remove spaces after opening tags
         html = re.sub(r"<\s+", "<", html)
 
         return html.strip()
@@ -285,7 +258,6 @@ class DOMExtractor:
         - classes: CSS classes on the element
         - id: Element ID if present
         """
-        # Escape single quotes in text for JavaScript
         escaped_text = text.replace("'", "\\'")
 
         script = f"""
@@ -411,5 +383,4 @@ class DOMExtractor:
             results = self.page.evaluate(script)
             return results if results else []
         except Exception as e:
-            # Return empty list on error
             return []

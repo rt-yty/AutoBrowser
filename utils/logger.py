@@ -1,11 +1,7 @@
-"""Rich terminal logging utilities."""
-
-from datetime import datetime
 from typing import Optional
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 from rich import box
 
 
@@ -35,11 +31,9 @@ class AgentLogger:
         self, agent: str, tool: str, args: dict, reasoning: Optional[str] = None
     ) -> None:
         """Log an agent action."""
-        # Format the action
         args_str = ", ".join(f"{k}={v}" for k, v in args.items())
         action_text = f"[yellow]{tool}[/yellow]({args_str})"
 
-        # Agent prefix with emoji
         agent_emoji = {
             "Coordinator": "🤖",
             "Navigator": "🧭",
@@ -48,117 +42,104 @@ class AgentLogger:
         }
         emoji = agent_emoji.get(agent, "🔧")
 
-        # Print action
         self.console.print(f"\n{emoji} [bold]{agent}[/bold]: {action_text}")
 
-        # Print reasoning if provided
         if reasoning:
             self.console.print(f"  [dim]→ {reasoning}[/dim]")
 
     def result(self, result: str, success: bool = True) -> None:
         """Log an action result."""
-        color = "green" if success else "red"
-        symbol = "✓" if success else "✗"
-
-        # Summarize verbose results for minimal terminal output
-        summarized = self._summarize_result(result)
-        self.console.print(f"  [{color}]{symbol} {summarized}[/{color}]")
+        pass
 
     def _summarize_result(self, result: str) -> str:
         """Summarize verbose tool results for clean terminal output."""
-        # If result is short, keep it as-is
         if len(result) <= 100:
             return result
 
-        # Detect page overview (contains element type headers)
-        if "URL:" in result and any(keyword in result for keyword in ["BUTTONS:", "LINKS:", "COMBOBOXS:", "TEXTBOXS:"]):
+        element_keywords = ["BUTTONS:", "LINKS:", "COMBOBOXS:", "TEXTBOXS:"]
+
+        if "URL:" in result and any(kw in result for kw in element_keywords):
             return self._summarize_page_overview(result)
 
-        # Detect HTML content (contains HTML tags)
         if result.strip().startswith("<") and ">" in result[:50]:
             return self._summarize_html(result)
 
-        # Detect truncation message
-        if "TRUNCATED" in result:
-            # Extract just the truncation info
-            if "showing first" in result:
-                parts = result.split("showing first")
-                if len(parts) > 1:
-                    return f"Content truncated: {parts[1].strip()}"
+        if "TRUNCATED" in result and "showing first" in result:
+            parts = result.split("showing first")
+            return f"Content truncated: {parts[1].strip()}" if len(parts) > 1 else result[:100] + "..."
 
-        # For other long results, show first 100 chars
         return result[:100] + "..."
 
     def _summarize_page_overview(self, overview: str) -> str:
         """Summarize page overview to show element counts only."""
         lines = overview.split("\n")
 
-        # Extract URL and title
-        url = ""
-        title = ""
-        for line in lines:
-            if line.startswith("URL:"):
-                url = line.replace("URL:", "").strip()
-                # Truncate long URLs
-                if len(url) > 50:
-                    url = url[:47] + "..."
-            elif line.startswith("Title:"):
-                title = line.replace("Title:", "").strip()
-                # Truncate long titles
-                if len(title) > 30:
-                    title = title[:27] + "..."
+        url, title = self._extract_page_metadata(lines)
+        element_counts = self._count_elements_by_type(lines)
 
-        # Count element types
-        element_counts = {}
-        current_type = None
-        for line in lines:
-            # Detect element type headers (e.g., "BUTTONS:", "LINKS:")
-            if line.strip().endswith("S:") and line.strip().isupper():
-                current_type = line.strip().rstrip("S:")
-                element_counts[current_type] = 0
-            elif current_type and "... and" in line and "more" in line:
-                # Extract count from "... and X more"
-                try:
-                    extra = int(line.split("... and")[1].split("more")[0].strip())
-                    element_counts[current_type] += extra
-                except:
-                    pass
-            elif current_type and line.strip().startswith("-"):
-                element_counts[current_type] = element_counts.get(current_type, 0) + 1
-
-        # Build summary
         parts = []
         if url:
             parts.append(f"URL: {url}")
         if title:
             parts.append(f"Title: {title}")
 
-        # Format element counts
         if element_counts:
-            counts_str = ", ".join(f"{count} {typ.lower()}{'s' if count != 1 else ''}"
-                                   for typ, count in element_counts.items() if count > 0)
+            counts_str = ", ".join(
+                f"{count} {typ.lower()}{'s' if count != 1 else ''}"
+                for typ, count in element_counts.items()
+                if count > 0
+            )
             if counts_str:
                 parts.append(f"Elements: {counts_str}")
 
         return " | ".join(parts) if parts else "Page overview extracted"
 
+    def _extract_page_metadata(self, lines: list) -> tuple:
+        """Extract URL and title from overview lines."""
+        url = title = ""
+
+        for line in lines:
+            if line.startswith("URL:"):
+                url = line.replace("URL:", "").strip()
+                url = url[:47] + "..." if len(url) > 50 else url
+            elif line.startswith("Title:"):
+                title = line.replace("Title:", "").strip()
+                title = title[:27] + "..." if len(title) > 30 else title
+
+        return url, title
+
+    def _count_elements_by_type(self, lines: list) -> dict:
+        """Count elements by type from overview lines."""
+        element_counts = {}
+        current_type = None
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped.endswith("S:") and stripped.isupper():
+                current_type = stripped.rstrip("S:")
+                element_counts[current_type] = 0
+            elif current_type:
+                if "... and" in line and "more" in line:
+                    try:
+                        extra = int(line.split("... and")[1].split("more")[0].strip())
+                        element_counts[current_type] += extra
+                    except:
+                        pass
+                elif stripped.startswith("-"):
+                    element_counts[current_type] = element_counts.get(current_type, 0) + 1
+
+        return element_counts
+
     def _summarize_html(self, html: str) -> str:
         """Summarize HTML content."""
-        # Check for truncation message
         if "[TRUNCATED" in html:
             try:
-                # Extract info from truncation message
                 truncate_msg = html.split("[TRUNCATED")[1].split("]")[0]
                 return f"HTML extracted (truncated): {truncate_msg}"
             except:
                 pass
 
-        # Count approximate size
-        length = len(html)
-        if length > 1000:
-            return f"HTML extracted: {length} chars"
-        else:
-            return f"HTML extracted: {length} chars"
+        return f"HTML extracted: {len(html)} chars"
 
     def error(self, error: str) -> None:
         """Log an error."""
@@ -190,6 +171,38 @@ class AgentLogger:
         self.console.print()
         self.console.print(panel)
 
+    def pause(self, message: str) -> None:
+        """Log pause with action required."""
+        panel = Panel(
+            f"[bold yellow]⏸️  PAUSED - Human Action Required[/bold yellow]\n\n"
+            f"➡️  {message}\n\n"
+            f"[dim]👉 Please complete this action in the browser window,\n"
+            f"   then press Enter to continue...[/dim]",
+            border_style="yellow",
+            box=box.ROUNDED,
+        )
+        self.console.print()
+        self.console.print(panel)
+
+    def confirm(self, message: str, risk_level: str) -> None:
+        """Log confirmation request for destructive actions."""
+        emoji_map = {"financial": "💰", "deletion": "🗑️", "irreversible": "⚠️"}
+        emoji = emoji_map.get(risk_level, "⚠️")
+
+        panel = Panel(
+            f"[bold red]{emoji}  CONFIRMATION REQUIRED - {risk_level.upper()} ACTION[/bold red]\n\n"
+            f"➡️  {message}\n\n"
+            f"[bold]⚠️  This action may be irreversible![/bold]",
+            border_style="red",
+            box=box.ROUNDED,
+        )
+        self.console.print()
+        self.console.print(panel)
+
+    def prompt(self, message: str) -> None:
+        """Log user prompt."""
+        self.console.print(f"\n[bold cyan]{message}[/bold cyan]")
+
     def step(self, step_num: int, total: int, description: str) -> None:
         """Log a step in a multi-step process."""
         self.console.print(f"\n[bold]Step {step_num}/{total}:[/bold] {description}")
@@ -213,5 +226,4 @@ class AgentLogger:
         self.console.print("[dim]" + "─" * 80 + "[/dim]")
 
 
-# Global logger instance
 logger = AgentLogger()

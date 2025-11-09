@@ -1,12 +1,12 @@
-"""Context management for the agent."""
-
 import logging
-from typing import Dict, Any
+from typing import Any, Dict, List
 
-from browser.dom_utils import DOMExtractor
 from browser.controller import BrowserController
+from browser.dom_utils import DOMExtractor
 
 logger = logging.getLogger(__name__)
+
+CHARS_PER_TOKEN = 4
 
 
 class ContextManager:
@@ -18,47 +18,58 @@ class ContextManager:
         self.extractor = DOMExtractor(browser.page)
 
     def get_current_context(self) -> Dict[str, Any]:
-        """
-        Get the current page context in a format suitable for the agent.
+        """Get the current page context in a format suitable for the agent.
+
         Uses hybrid approach: accessibility tree + on-demand HTML.
+
+        Returns:
+            Dict with url, title, overview, estimated_tokens, was_truncated
         """
-        # Get page overview using accessibility tree
         overview = self.extractor.get_page_overview()
 
-        # Estimate token count (rough: 1 token ≈ 4 characters)
-        estimated_tokens = len(overview) // 4
+        estimated_tokens = len(overview) // CHARS_PER_TOKEN
         was_truncated = False
 
-        # If overview is too long, truncate intelligently
         if estimated_tokens > self.token_limit:
-            was_truncated = True
-            original_token_count = estimated_tokens
-            lines = overview.split("\n")
-            truncated_lines = []
-            current_tokens = 0
-
-            for line in lines:
-                line_tokens = len(line) // 4
-                if current_tokens + line_tokens > self.token_limit:
-                    truncated_lines.append(
-                        f"... (truncated, {len(lines) - len(truncated_lines)} lines omitted)"
-                    )
-                    break
-                truncated_lines.append(line)
-                current_tokens += line_tokens
-
-            overview = "\n".join(truncated_lines)
+            overview, was_truncated = self._truncate_overview(overview)
+            new_tokens = len(overview) // CHARS_PER_TOKEN
             logger.warning(
-                f"Context truncated: {original_token_count} tokens → {len(overview) // 4} tokens"
+                f"Context truncated: {estimated_tokens} tokens → {new_tokens} tokens"
             )
+            estimated_tokens = new_tokens
 
         return {
             "url": self.browser.get_current_url(),
             "title": self.browser.get_title(),
             "overview": overview,
-            "estimated_tokens": len(overview) // 4,
+            "estimated_tokens": estimated_tokens,
             "was_truncated": was_truncated,
         }
+
+    def _truncate_overview(self, overview: str) -> tuple[str, bool]:
+        """Truncate overview to fit within token limit.
+
+        Args:
+            overview: Original overview text
+
+        Returns:
+            Tuple of (truncated_overview, was_truncated)
+        """
+        lines = overview.split("\n")
+        truncated_lines = []
+        current_tokens = 0
+
+        for line in lines:
+            line_tokens = len(line) // CHARS_PER_TOKEN
+            if current_tokens + line_tokens > self.token_limit:
+                truncated_lines.append(
+                    f"... (truncated, {len(lines) - len(truncated_lines)} lines omitted)"
+                )
+                break
+            truncated_lines.append(line)
+            current_tokens += line_tokens
+
+        return "\n".join(truncated_lines), True
 
     def get_element_details(self, selector: str) -> str:
         """Get detailed information about a specific element."""

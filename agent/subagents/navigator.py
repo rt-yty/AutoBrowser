@@ -1,5 +1,3 @@
-"""Navigator sub-agent for navigation tasks."""
-
 from agent.subagents.base import SubAgent
 from llm.claude_client import ClaudeClient
 from llm.prompts import get_subagent_prompt
@@ -10,7 +8,6 @@ class Navigator(SubAgent):
     """Specialized sub-agent for navigation tasks."""
 
     def __init__(self, claude_client: ClaudeClient, browser, context_manager):
-        # Create tool registry with navigation-specific tools
         tools = self._create_tools(browser, context_manager)
 
         super().__init__(
@@ -34,7 +31,6 @@ class Navigator(SubAgent):
 
         registry = ToolRegistry()
 
-        # Use factory functions for common tools
         registry.register(create_navigation_tool(browser))
         registry.register(
             create_click_tool(
@@ -53,7 +49,6 @@ class Navigator(SubAgent):
         registry.register(create_page_overview_tool(context_manager))
         registry.register(create_element_details_tool(context_manager))
 
-        # Navigator-specific tool: press_key for Escape
         registry.register(
             Tool(
                 name="press_key",
@@ -72,7 +67,6 @@ class Navigator(SubAgent):
 
     def _press_key_handler(self, browser, key: str) -> str:
         """Handle pressing a keyboard key with validation."""
-        # Navigator only needs Escape for closing modals
         if key != "Escape":
             return "Navigator only supports 'Escape' key for closing modals/overlays"
         try:

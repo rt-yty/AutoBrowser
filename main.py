@@ -65,7 +65,6 @@ def get_user_task() -> str:
     """
     logger.separator()
     print("\n💬 Enter your task (or 'quit' to exit):")
-    print("Example: Find Python developer jobs in San Francisco on LinkedIn")
     print()
     return input("Task: ").strip()
 

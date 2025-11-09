@@ -104,6 +104,26 @@ def create_click_tool(browser, description_override: str = None) -> Tool:
     )
 
 
+def create_hover_tool(browser, description_override: str = None) -> Tool:
+    """Create hover tool with optional description override."""
+    desc = description_override or "Hover over an element to reveal dropdown menus, tooltips, or hidden content."
+    return Tool(
+        name="hover",
+        description=desc,
+        parameters={
+            "selector": {
+                "type": "string",
+                "description": "Single valid Playwright selector for the element to hover over. Must be specific. NEVER use comma-separated selectors.",
+            },
+            "description": {
+                "type": "string",
+                "description": "Human-readable description of what element you're hovering over",
+            },
+        },
+        handler=lambda selector, description: hover_handler(browser, selector, description),
+    )
+
+
 def create_type_text_tool(browser) -> Tool:
     """Create type_text tool."""
     return Tool(
@@ -226,6 +246,27 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
         )
     )
 
+    # Hover tool
+    registry.register(
+        Tool(
+            name="hover",
+            description="Hover over an element to reveal dropdown menus, tooltips, or hidden content that appears on hover.",
+            parameters={
+                "selector": {
+                    "type": "string",
+                    "description": "Single valid Playwright selector for the element to hover over. Examples: \"nav a:has-text('Products')\", \".dropdown-trigger\", \"button.menu-toggle\". NEVER use comma-separated selectors.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Human-readable description of what element you're hovering over",
+                },
+            },
+            handler=lambda selector, description: hover_handler(
+                browser, selector, description
+            ),
+        )
+    )
+
     # Type text tool
     registry.register(
         Tool(
@@ -270,11 +311,11 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
     registry.register(
         Tool(
             name="press_key",
-            description="Press a keyboard key. Use after typing in input fields (Enter to submit), to close modals (Escape), or to navigate forms (Tab).",
+            description="Press a keyboard key. Use for form submission (Enter), closing modals (Escape), navigation (Tab, arrows), editing (Backspace, Delete), or scrolling (PageUp, PageDown).",
             parameters={
                 "key": {
                     "type": "string",
-                    "description": "Key to press. Options: 'Enter', 'Escape', 'Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'",
+                    "description": "Key to press. Options: 'Enter', 'Escape', 'Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete', 'Home', 'End', 'PageUp', 'PageDown'",
                 }
             },
             handler=lambda key: press_key_handler(browser, key),
@@ -299,6 +340,68 @@ def create_coordinator_tools(browser, context_manager, subagents) -> ToolRegistr
             handler=lambda selector, timeout=10000: wait_for_element_handler(
                 browser, selector, timeout
             ),
+        )
+    )
+
+    # Multi-tab management tools
+    registry.register(
+        Tool(
+            name="list_tabs",
+            description="List all open browser tabs with their titles, URLs, and which one is currently active.",
+            parameters={},
+            handler=lambda: list_tabs_handler(browser),
+        )
+    )
+
+    registry.register(
+        Tool(
+            name="switch_to_tab",
+            description="Switch to a different browser tab by its index. Use list_tabs first to see available tabs.",
+            parameters={
+                "tab_index": {
+                    "type": "integer",
+                    "description": "Zero-based index of the tab to switch to (0 = first tab, 1 = second tab, etc.)",
+                }
+            },
+            handler=lambda tab_index: switch_to_tab_handler(browser, tab_index),
+        )
+    )
+
+    registry.register(
+        Tool(
+            name="close_tab",
+            description="Close a browser tab by its index. Cannot close the only remaining tab.",
+            parameters={
+                "tab_index": {
+                    "type": "integer",
+                    "description": "Zero-based index of the tab to close (0 = first tab, 1 = second tab, etc.)",
+                }
+            },
+            handler=lambda tab_index: close_tab_handler(browser, tab_index),
+        )
+    )
+
+    # Iframe management tools
+    registry.register(
+        Tool(
+            name="switch_to_frame",
+            description="Switch context to an iframe/frame element. Use this when you need to interact with content inside an iframe (e.g., embedded forms, payment widgets, chat widgets). After switching, you can use Playwright's >> syntax: 'iframe#payment >> input[name=\"card\"]'.",
+            parameters={
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector for the iframe element. Examples: 'iframe#payment-form', 'iframe[name=\"checkout\"]', 'iframe.embedded-widget'. NEVER use comma-separated selectors.",
+                }
+            },
+            handler=lambda selector: switch_to_frame_handler(browser, selector),
+        )
+    )
+
+    registry.register(
+        Tool(
+            name="switch_to_main_content",
+            description="Switch context back to the main page content (exit iframe). Use this after you're done working with iframe content.",
+            parameters={},
+            handler=lambda: switch_to_main_content_handler(browser),
         )
     )
 
@@ -448,6 +551,15 @@ def click_handler(browser, selector: str, description: str) -> str:
         return f"Failed to click {description}: {str(e)}"
 
 
+def hover_handler(browser, selector: str, description: str) -> str:
+    """Handle hovering over an element."""
+    try:
+        browser.hover(selector)
+        return f"Successfully hovered over: {description}"
+    except Exception as e:
+        return f"Failed to hover over {description}: {str(e)}"
+
+
 def type_text_handler(browser, selector: str, text: str) -> str:
     """Handle typing text."""
     try:
@@ -529,3 +641,66 @@ def press_key_handler(browser, key: str) -> str:
         return f"Successfully pressed key: {key}"
     except Exception as e:
         return f"Failed to press key: {str(e)}"
+
+
+def list_tabs_handler(browser) -> str:
+    """Handle listing all open tabs."""
+    try:
+        tabs = browser.list_tabs()
+        if not tabs:
+            return "No tabs open"
+
+        lines = [f"Found {len(tabs)} open tab(s):"]
+        for tab in tabs:
+            active_marker = " [ACTIVE]" if tab["is_active"] else ""
+            lines.append(
+                f"{tab['index']}. {tab['title'][:50]} - {tab['url'][:60]}{active_marker}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Failed to list tabs: {str(e)}"
+
+
+def switch_to_tab_handler(browser, tab_index: int) -> str:
+    """Handle switching to a different tab."""
+    try:
+        browser.switch_to_tab(tab_index)
+        # Get info about the new active tab
+        tabs = browser.list_tabs()
+        active_tab = tabs[tab_index]
+        return f"Switched to tab {tab_index}: {active_tab['title'][:50]} - {active_tab['url'][:60]}"
+    except Exception as e:
+        return f"Failed to switch to tab: {str(e)}"
+
+
+def close_tab_handler(browser, tab_index: int) -> str:
+    """Handle closing a tab."""
+    try:
+        # Get tab info before closing
+        tabs = browser.list_tabs()
+        if tab_index < len(tabs):
+            tab_info = tabs[tab_index]
+            browser.close_tab(tab_index)
+            return f"Closed tab {tab_index}: {tab_info['title'][:50]}"
+        else:
+            return f"Invalid tab index: {tab_index}"
+    except Exception as e:
+        return f"Failed to close tab: {str(e)}"
+
+
+def switch_to_frame_handler(browser, selector: str) -> str:
+    """Handle switching to iframe context."""
+    try:
+        browser.switch_to_frame(selector)
+        return f"Switched to iframe: {selector}. You can now interact with elements inside the iframe using Playwright's >> syntax (e.g., '{selector} >> button')."
+    except Exception as e:
+        return f"Failed to switch to iframe: {str(e)}"
+
+
+def switch_to_main_content_handler(browser) -> str:
+    """Handle switching back to main content."""
+    try:
+        browser.switch_to_main_content()
+        return "Switched back to main page content (exited iframe context)."
+    except Exception as e:
+        return f"Failed to switch to main content: {str(e)}"

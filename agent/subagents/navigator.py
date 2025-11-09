@@ -25,6 +25,7 @@ class Navigator(SubAgent):
         from agent.tools import (
             create_navigation_tool,
             create_click_tool,
+            create_hover_tool,
             create_scroll_tool,
             create_wait_tool,
             create_page_overview_tool,
@@ -39,6 +40,12 @@ class Navigator(SubAgent):
             create_click_tool(
                 browser,
                 "Click on a navigation element (link, button, menu item)."
+            )
+        )
+        registry.register(
+            create_hover_tool(
+                browser,
+                "Hover over navigation element to reveal dropdown menus."
             )
         )
         registry.register(create_scroll_tool(browser))

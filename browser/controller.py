@@ -24,6 +24,8 @@ class BrowserController:
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
+        self._is_started: bool = False  # Track if browser is running
+        self._current_frame_selector: Optional[str] = None  # Track iframe context
 
     @staticmethod
     def validate_selector(selector: str) -> Tuple[bool, str]:
@@ -74,6 +76,77 @@ class BrowserController:
 
         return True, ""
 
+    def _kill_existing_browser_processes(self) -> None:
+        """
+        Kill any existing browser processes using the same user data directory.
+
+        This ensures only one browser instance is running at a time.
+        """
+        import subprocess
+        import platform
+        from utils.logger import logger
+
+        try:
+            system = platform.system()
+            user_data_path = str(self.config.user_data_dir)
+
+            if system == "Darwin":  # macOS
+                # Find and kill processes using the user data directory
+                # Use pgrep to find PIDs first, then kill them
+                try:
+                    # Find WebKit processes with our user data path
+                    result = subprocess.run(
+                        ["pgrep", "-f", user_data_path],
+                        capture_output=True,
+                        timeout=5,
+                        text=True
+                    )
+                    if result.stdout:
+                        pids = result.stdout.strip().split('\n')
+                        logger.info(f"Found {len(pids)} existing browser processes to kill")
+                        for pid in pids:
+                            if pid:
+                                try:
+                                    subprocess.run(["kill", "-9", pid], timeout=2)
+                                except Exception:
+                                    pass
+                except Exception as e:
+                    logger.debug(f"Could not kill existing processes: {e}")
+
+            elif system == "Linux":
+                # Kill browser processes on Linux
+                try:
+                    result = subprocess.run(
+                        ["pgrep", "-f", user_data_path],
+                        capture_output=True,
+                        timeout=5,
+                        text=True
+                    )
+                    if result.stdout:
+                        pids = result.stdout.strip().split('\n')
+                        for pid in pids:
+                            if pid:
+                                subprocess.run(["kill", "-9", pid], timeout=2)
+                except Exception:
+                    pass
+
+            elif system == "Windows":
+                # Kill browser processes on Windows
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", "WebKitWebProcess.exe"],
+                    capture_output=True,
+                    timeout=5
+                )
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", "chrome.exe"],
+                    capture_output=True,
+                    timeout=5
+                )
+        except Exception as e:
+            # If killing processes fails, continue anyway
+            # The new browser will handle conflicts
+            logger.debug(f"Process cleanup completed with some errors: {e}")
+
     @staticmethod
     def _is_safe_url(url: str) -> bool:
         """
@@ -120,11 +193,25 @@ class BrowserController:
 
     def start(self) -> Page:
         """Start the browser with persistent context (saves cookies/sessions)."""
+        from utils.logger import logger
+
+        # Check if browser is already running using explicit flag
+        if self._is_started and self._page is not None and self._context is not None:
+            logger.info("Browser already running, reusing existing instance")
+            return self._page
+
+        logger.info("Starting new browser instance...")
+
         # Ensure user data directory exists
         self.config.user_data_dir.mkdir(parents=True, exist_ok=True)
 
-        # Start Playwright
-        self._playwright = sync_playwright().start()
+        # Kill any existing browser processes to ensure clean start
+        self._kill_existing_browser_processes()
+
+        # Start Playwright (only if not already started)
+        if self._playwright is None:
+            self._playwright = sync_playwright().start()
+            logger.info("Playwright engine started")
 
         # Launch browser with persistent context
         # This automatically saves cookies, localStorage, and session data
@@ -165,23 +252,49 @@ class BrowserController:
 
         # Get or create page
         if len(self._context.pages) > 0:
-            # Reuse existing page from previous session
+            # Reuse existing page from previous session (first page is active)
             self._page = self._context.pages[0]
         else:
             # Create new page
             self._page = self._context.new_page()
 
+        # Mark browser as started
+        self._is_started = True
+        logger.info(f"Browser started successfully (PID: {self._context.pages[0] if self._context.pages else 'unknown'})")
+
         return self._page
 
     def stop(self) -> None:
         """Stop the browser and clean up resources (saves session state)."""
+        from utils.logger import logger
+
+        if not self._is_started:
+            logger.info("Browser not running, nothing to stop")
+            return
+
+        logger.info("Stopping browser...")
+
         # Don't close page explicitly - let context handle it
         # This preserves the session state better
         if self._context:
-            self._context.close()
+            try:
+                self._context.close()
+            except Exception as e:
+                logger.warning(f"Error closing context: {e}")
+
         # Note: self._browser is None when using persistent context
         if self._playwright:
-            self._playwright.stop()
+            try:
+                self._playwright.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping playwright: {e}")
+
+        # Reset all state
+        self._page = None
+        self._context = None
+        self._playwright = None
+        self._is_started = False
+        logger.info("Browser stopped successfully")
 
     @property
     def page(self) -> Page:
@@ -417,6 +530,12 @@ class BrowserController:
             "ArrowDown",
             "ArrowLeft",
             "ArrowRight",
+            "Backspace",
+            "Delete",
+            "Home",
+            "End",
+            "PageUp",
+            "PageDown",
         }
 
         if key not in supported_keys:
@@ -428,3 +547,181 @@ class BrowserController:
             self.page.keyboard.press(key)
         except PlaywrightError as e:
             raise Exception(f"Failed to press key '{key}': {str(e)}")
+
+    def hover(self, selector: str, timeout: int = 10000) -> None:
+        """
+        Hover over an element to reveal dropdown menus, tooltips, or hidden content.
+
+        Args:
+            selector: Single Playwright selector for the element to hover over
+            timeout: Timeout in milliseconds
+
+        Raises:
+            Exception: If selector is invalid or hover fails
+        """
+        # Validate selector first
+        is_valid, error_msg = self.validate_selector(selector)
+        if not is_valid:
+            raise Exception(f"Invalid selector: {error_msg}")
+
+        try:
+            # Wait for element to be visible before hovering
+            element = self.page.wait_for_selector(selector, timeout=timeout, state="visible")
+            if element:
+                element.hover(timeout=timeout)
+            else:
+                raise Exception(f"Element '{selector}' not found within {timeout}ms")
+        except PlaywrightTimeoutError:
+            raise Exception(
+                f"Hover timeout: element '{selector}' not found or not visible within {timeout}ms. "
+                "The element might not exist or might be hidden."
+            )
+        except PlaywrightError as e:
+            raise Exception(f"Hover failed on '{selector}': {str(e)}")
+
+    def list_tabs(self) -> list[dict]:
+        """
+        Get a list of all open tabs with their information.
+
+        Returns:
+            List of dicts with: index, title, url, is_active
+        """
+        tabs = []
+        for i, page in enumerate(self._context.pages):
+            tabs.append({
+                "index": i,
+                "title": page.title(),
+                "url": page.url,
+                "is_active": page == self._page
+            })
+        return tabs
+
+    def switch_to_tab(self, tab_index: int) -> None:
+        """
+        Switch to a different tab by index.
+
+        Args:
+            tab_index: Zero-based index of the tab to switch to
+
+        Raises:
+            Exception: If tab index is invalid
+        """
+        pages = self._context.pages
+        if tab_index < 0 or tab_index >= len(pages):
+            raise Exception(
+                f"Invalid tab index: {tab_index}. "
+                f"Available tabs: 0-{len(pages)-1}"
+            )
+
+        self._page = pages[tab_index]
+        # Bring the tab to front
+        try:
+            self._page.bring_to_front()
+        except Exception:
+            # If bring_to_front fails, still switch the internal reference
+            pass
+
+    def close_tab(self, tab_index: int) -> None:
+        """
+        Close a tab by index.
+
+        Args:
+            tab_index: Zero-based index of the tab to close
+
+        Raises:
+            Exception: If tab index is invalid or trying to close the only tab
+        """
+        pages = self._context.pages
+
+        if len(pages) == 1:
+            raise Exception(
+                "Cannot close the only open tab. "
+                "At least one tab must remain open."
+            )
+
+        if tab_index < 0 or tab_index >= len(pages):
+            raise Exception(
+                f"Invalid tab index: {tab_index}. "
+                f"Available tabs: 0-{len(pages)-1}"
+            )
+
+        page_to_close = pages[tab_index]
+
+        # If closing the active tab, switch to another tab first
+        if page_to_close == self._page:
+            # Switch to the next tab, or previous if this is the last tab
+            new_index = tab_index + 1 if tab_index < len(pages) - 1 else tab_index - 1
+            self._page = pages[new_index]
+            try:
+                self._page.bring_to_front()
+            except Exception:
+                pass
+
+        # Close the tab
+        try:
+            page_to_close.close()
+        except Exception as e:
+            raise Exception(f"Failed to close tab {tab_index}: {str(e)}")
+
+    def get_active_tab_index(self) -> int:
+        """
+        Get the index of the currently active tab.
+
+        Returns:
+            Zero-based index of the active tab, or -1 if not found
+        """
+        for i, page in enumerate(self._context.pages):
+            if page == self._page:
+                return i
+        return -1
+
+    def switch_to_frame(self, selector: str) -> None:
+        """
+        Switch context to an iframe on the page.
+
+        After calling this, all subsequent actions (click, type, etc.) will operate
+        within the iframe until switch_to_main_content() is called.
+
+        Args:
+            selector: CSS selector for the iframe element (e.g., "iframe#payment-form")
+
+        Raises:
+            Exception: If selector is invalid or iframe not found
+        """
+        # Validate selector
+        is_valid, error_msg = self.validate_selector(selector)
+        if not is_valid:
+            raise Exception(f"Invalid selector: {error_msg}")
+
+        # Check if iframe exists
+        try:
+            self.page.wait_for_selector(selector, timeout=5000, state="attached")
+        except PlaywrightTimeoutError:
+            raise Exception(f"Iframe with selector '{selector}' not found on page")
+        except PlaywrightError as e:
+            raise Exception(f"Failed to find iframe: {str(e)}")
+
+        # Store the frame selector for use in subsequent operations
+        self._current_frame_selector = selector
+
+    def switch_to_main_content(self) -> None:
+        """
+        Switch context back to the main page content (exit iframe context).
+
+        After calling this, all subsequent actions will operate on the main page.
+        """
+        self._current_frame_selector = None
+
+    def _get_frame_or_page(self):
+        """
+        Internal helper to get the current frame locator or page.
+
+        Returns the appropriate context for operations based on whether
+        we're currently in an iframe or the main page.
+        """
+        if self._current_frame_selector:
+            # Return frame locator
+            return self.page.frame_locator(self._current_frame_selector)
+        else:
+            # Return main page
+            return self.page
